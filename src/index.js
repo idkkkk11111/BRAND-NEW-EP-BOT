@@ -138,7 +138,8 @@ client.on(Events.MessageCreate, async (message) => {
       return message.reply('That message doesn’t mention any members.');
     }
 
-    await message.reply(
+    // Prompt for the amount and keep a reference so we can delete it later.
+    const prompt = await message.reply(
       `How much EP would you like to give to **${targets.length}** member(s)? ` +
         'Reply with a number (negative to remove), or type `cancel`.',
     );
@@ -152,18 +153,32 @@ client.on(Events.MessageCreate, async (message) => {
       })
       .catch(() => null);
 
-    if (!collected) return message.reply('⏳ Timed out — no EP was given.');
+    if (!collected) {
+      await cleanup([message, prompt]); // tidy up; no check added on timeout
+      return sendTemp(message.channel, '⏳ Timed out — no EP was given.');
+    }
 
-    const text = collected.first().content.trim().toLowerCase();
-    if (text === 'cancel') return message.reply('Cancelled.');
+    const amountReply = collected.first();
+    const text = amountReply.content.trim().toLowerCase();
+
+    if (text === 'cancel') {
+      await cleanup([message, prompt, amountReply]);
+      return sendTemp(message.channel, 'Cancelled — nothing was given.');
+    }
 
     const amount = parseInt(text, 10);
     if (Number.isNaN(amount) || amount === 0) {
-      return message.reply('That isn’t a valid amount — nothing was given.');
+      await cleanup([message, prompt, amountReply]);
+      return sendTemp(message.channel, 'That isn’t a valid amount — nothing was given.');
     }
 
-    const { embed } = await applyEpAndLog(message.guild, targets, amount, message.author);
-    await message.reply({ embeds: [embed] });
+    // Apply the EP and log it to the EP log channel (this is the permanent record).
+    await applyEpAndLog(message.guild, targets, amount, message.author);
+
+    // Add a ✅ to the event-log message to mark it handled, then delete the command
+    // back-and-forth. IMPORTANT: `replied` is never in the cleanup array -> never deleted.
+    await replied.react('✅').catch(() => {});
+    await cleanup([message, prompt, amountReply]);
   } catch (err) {
     console.error('Prefix command error:', err);
   }
