@@ -86,6 +86,25 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
 // ---------- Prefix command: -logep ----------
 
+// Delete a message, ignoring "missing permission" / "already deleted" errors.
+const safeDelete = (msg) => (msg ? msg.delete().catch(() => {}) : Promise.resolve());
+
+// Delete several messages in sequence (used to clear the -logep back-and-forth).
+async function cleanup(messages) {
+  for (const m of messages) await safeDelete(m);
+}
+
+// Post a short message that removes itself after a few seconds, so error/cancel
+// feedback doesn't linger in the channel.
+async function sendTemp(channel, content, ms = 6000) {
+  try {
+    const m = await channel.send(content);
+    setTimeout(() => safeDelete(m), ms);
+  } catch {
+    /* ignore */
+  }
+}
+
 client.on(Events.MessageCreate, async (message) => {
   try {
     if (message.author.bot || !message.guild) return;
